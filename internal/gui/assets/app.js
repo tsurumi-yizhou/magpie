@@ -2531,11 +2531,16 @@ function updatedSay() {
 // ---------- installing the agents not here (#727) ----------
 // Under the list, the agents magpie knows that aren't on this machine, each
 // with its vendor's install commands to copy into a terminal: the vendor's
-// installer first, then Homebrew's or npm's. magpie doesn't run them — a
-// new computer may have no Node.js for npm yet, and an installer may ask
-// for things in the terminal. Folded unless no agent is here at all.
+// installer first, then the package's, installed with the Node.js package
+// manager this machine has. magpie doesn't run them — a new computer may
+// have no package manager yet, and an installer may ask for things in the
+// terminal. Folded unless no agent is here at all.
 
 let installInfo = []; // [{ id, name, icon, commands: [{ via, command }] }]
+// installPM: the Node.js package manager the npm commands run with here
+// (bun, yarn, pnpm or npm); "" when none is, and the commands are npm's,
+// with the note saying to get Node.js first
+let installPM = "";
 
 // goneSaid: why an agent whose CLI is gone has nothing to set, and where
 // it is installed again, when Install another agent knows (Hermes has no
@@ -2547,6 +2552,8 @@ function goneSaid(a) {
 }
 let installsOpen = null; // null: as the list has it (open with no agents)
 const VIA = { script: "Installer", powershell: "PowerShell", brew: "Homebrew", npm: "npm" };
+// the VIA values a Node.js package manager gives, whose commands need one here
+const PM_VIAS = ["npm", "pnpm", "yarn", "bun"];
 
 let pluginAgents = []; // the names of the agents a suggested plugin adds, not installed
 
@@ -2557,13 +2564,14 @@ async function loadInstalls() {
   api("plugins/agents").then((r) => { pluginAgents = Array.isArray(r) ? r : []; paintInstalls(); }, () => {});
   let r;
   try { r = await api("agents/install"); } catch { return; } // it just isn't shown
-  installInfo = Array.isArray(r) ? r : [];
+  installInfo = Array.isArray(r.agents) ? r.agents : [];
+  installPM = r.packageManager || "";
   paintInstalls();
 }
 
-// installNote: what the commands want. With no Node.js on this machine the
-// server gives each npm command Node's install first (node: nvm, nvm-mac
-// or winget), and the note says so, and what may still be asked for.
+// installNote: what the commands want. With no Node.js package manager here
+// the npm commands can't run until Node.js is installed, and the note says
+// to get it from nodejs.org (Sun1090: "curl xxx && npm xxxx").
 function installNote(items) {
   // npm's global folder is Node.js's own under Program Files (新v学员 on
   // Discord): npm install -g there wants a terminal opened as administrator
@@ -2573,14 +2581,10 @@ function installNote(items) {
 }
 
 function installNoteFor(items) {
-  const node = items.flatMap((x) => x.commands).find((c) => c.node)?.node;
   const after = t("Run a command in a terminal, then come back: magpie lists the agent here once it is installed.");
-  if (node === "winget") return t("No Node.js was found here, so the npm commands install it with winget first; run them in PowerShell. If npm isn't found after Node.js is installed, open a new terminal and run the npm install again.") + " " + after;
-  if (node) {
-    const s = t("No Node.js was found here, so the npm commands install it with nvm first.") + " " + after;
-    return node === "nvm-mac" ? s + " " + t("On a Mac, nvm needs Xcode's Command Line Tools: if it asks for them, run xcode-select --install, then the command again.") : s;
-  }
-  return t("Run a command in a terminal, then come back: magpie lists the agent here once it is installed. The npm commands need Node.js (nodejs.org).");
+  const npm = items.some((x) => x.commands.some((c) => PM_VIAS.includes(c.via)));
+  if (!npm || installPM) return after;
+  return t("No Node.js was found here, and no npm, pnpm, yarn or bun either: install Node.js from nodejs.org (npm comes with it), then run one of the commands below in a terminal: magpie lists the agent here once it is installed.");
 }
 
 function paintInstalls() {
@@ -2628,7 +2632,7 @@ function paintInstalls() {
       const cmds = el("div", "ag-install-cmds");
       for (const c of x.commands) {
         const line = el("div", "ag-install-cmd");
-        line.append(el("span", "ag-install-via", c.node ? t("Node.js + npm") : t(VIA[c.via] || c.via)), el("code", "", c.command), copyBtn(c.command, t("{agent}'s install command", { agent: x.name })));
+        line.append(el("span", "ag-install-via", t(VIA[c.via] || c.via)), el("code", "", c.command), copyBtn(c.command, t("{agent}'s install command", { agent: x.name })));
         cmds.append(line);
       }
       r.append(who, cmds);

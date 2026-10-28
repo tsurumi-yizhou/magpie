@@ -42,7 +42,7 @@ func TestCLIMissing(t *testing.T) {
 	if never.CLIMissing() || wsl.CLIMissing() {
 		t.Fatalf("missing: crush not here %v, wsl %v", never.CLIMissing(), wsl.CLIMissing())
 	}
-	got := installsOf([]*Agent{dsh, codex, never, wsl}, "darwin", true)
+	got := installsOf([]*Agent{dsh, codex, never, wsl}, "darwin", "")
 	ids := map[string]Install{}
 	for _, x := range got {
 		ids[x.ID] = x
@@ -70,7 +70,7 @@ func TestCLIMissing(t *testing.T) {
 	if dsh.CLIMissing() {
 		t.Fatal("dsh in ~/.local/bin taken for missing")
 	}
-	for _, x := range installsOf([]*Agent{dsh}, "darwin", true) {
+	for _, x := range installsOf([]*Agent{dsh}, "darwin", "") {
 		t.Fatalf("installed dsh offered: %+v", x)
 	}
 }
@@ -117,7 +117,7 @@ func TestCLIMissingHermes(t *testing.T) {
 		t.Fatalf("hermes by its config.yaml alone: detected %v, missing %v", h.Detected(), h.CLIMissing())
 	}
 	// no install command magpie knows: not offered, though gone
-	for _, x := range installsOf([]*Agent{h}, runtime.GOOS, true) {
+	for _, x := range installsOf([]*Agent{h}, runtime.GOOS, "") {
 		t.Fatalf("hermes offered: %+v", x)
 	}
 	mkdirT(t, filepath.Join(dir, "hermes-agent"))
@@ -270,7 +270,7 @@ func TestCLIMissingSharedFoldersWindows(t *testing.T) {
 		if a.CLIMissing() {
 			t.Errorf("%s: its folder alone taken for gone on Windows", c.id)
 		}
-		for _, x := range installsOf([]*Agent{a}, "windows", true) {
+		for _, x := range installsOf([]*Agent{a}, "windows", "") {
 			if x.Missing {
 				t.Errorf("%s offered again as gone: %+v", c.id, x)
 			}
@@ -317,7 +317,7 @@ func TestCLIMissingDshWindows(t *testing.T) {
 	if dsh.CLIMissing() {
 		t.Fatal("dsh taken for uninstalled on Windows, its settings hidden")
 	}
-	for _, x := range installsOf([]*Agent{dsh}, "windows", true) {
+	for _, x := range installsOf([]*Agent{dsh}, "windows", "") {
 		if x.Missing {
 			t.Fatalf("dsh offered again as gone on Windows: %+v", x)
 		}

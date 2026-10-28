@@ -46,7 +46,7 @@ func TestCursorCLIVersionShown(t *testing.T) {
 	if c.Update || c.Via != "" || c.Command != "" {
 		t.Errorf("an update is offered for a CLI that updates itself: %+v", c)
 	}
-	if got := installCommands("cursor", runtime.GOOS, true); got != nil {
+	if got := installCommands("cursor", runtime.GOOS, ""); got != nil {
 		t.Errorf("an install command for Cursor CLI: %+v", got)
 	}
 }

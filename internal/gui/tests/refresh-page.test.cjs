@@ -52,7 +52,7 @@ function server(lang, ctl) {
       ctl.installs = ctl.installs.filter((x) => x.id !== "claude");
       return json(state());
     }
-    if (url.pathname === "/api/agents/install") return json(ctl.installs);
+    if (url.pathname === "/api/agents/install") return json({ agents: ctl.installs, packageManager: "npm" });
     if (url.pathname === "/api/agents/cli") return json({ agents: {}, pending: false });
     if (url.pathname === "/api/update") return json({ state: "latest", current: "0.1.400" });
     if (url.pathname === "/api/usage/quotas") return json([]);

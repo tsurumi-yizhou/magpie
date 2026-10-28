@@ -63,7 +63,7 @@ func TestCodeBuddyIDEIsCodeBuddy(t *testing.T) {
 		t.Fatalf("the row is %q, not the CLI's and the IDE's both", a.Name)
 	}
 	offered := func() bool {
-		for _, x := range installsOf([]*Agent{a}, "darwin", true) {
+		for _, x := range installsOf([]*Agent{a}, "darwin", "") {
 			if x.ID == "codebuddy" {
 				return true
 			}

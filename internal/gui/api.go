@@ -999,7 +999,8 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		writeJSON(rw, map[string]any{"agents": clis, "pending": pending})
 	})
 	// the agents magpie knows that aren't here, with their vendors' install
-	// commands to copy (#727)
+	// commands to copy (#727), and where Node.js and npm come from where
+	// npm isn't here
 	mux.HandleFunc("GET /api/agents/install", func(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, agent.Installs())
 	})

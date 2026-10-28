@@ -35,7 +35,7 @@ function server(lang, ctl) {
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/state") return json({ agents: [{ id: "pi", name: "Pi", path: "~/.pi", fields: [] }], profiles: [], settings: { lang, theme: "light" } });
     if (url.pathname === "/api/agents/cli") return json({ agents: {}, pending: false });
-    if (url.pathname === "/api/agents/install") return json(ctl.installs);
+    if (url.pathname === "/api/agents/install") return json({ agents: ctl.installs, packageManager: "npm" });
     if (url.pathname === "/api/plugins/agents") return json(ctl.agents);
     if (url.pathname === "/api/plugins") return json({ bun: true, plugins: [] });
     if (url.pathname === "/api/plugins/listings") return json({ listings });

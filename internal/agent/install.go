@@ -8,10 +8,12 @@ package agent
 // install needs what a new machine may not have yet (Node.js for npm,
 // Homebrew), and a global npm prefix that may want sudo.
 //
-// Where no Node.js is found, each npm command installs it first (#727,
-// Sun1090: "curl xxx && npm xxxx"): nvm's installer and its LTS Node on a
-// Mac or Linux, as nodejs.org's download page gives, winget's Node.js LTS
-// on Windows; the npm install follows in the same line.
+// The package's command is the Node.js package manager's global install
+// alone, not Node.js's install and then npm's in one line (Sun1090:
+// "curl xxx && npm xxxx" put Node.js's install in every agent's line): the
+// package manager this machine has, the first of bun, yarn, pnpm and npm
+// (packageManager), installs the package, and the page says to get Node.js
+// from nodejs.org when there is none at all.
 
 import (
 	"context"
@@ -29,15 +31,14 @@ import (
 // InstallCmd is one way to install an agent's CLI.
 type InstallCmd struct {
 	// Via is what runs it: script (the vendor's installer, in a shell),
-	// powershell (the vendor's installer, on Windows), brew or npm
+	// powershell (the vendor's installer, on Windows), brew, or the
+	// Node.js package manager that installs the package: npm, pnpm, yarn
+	// or bun
 	Via     string `json:"via"`
 	Command string `json:"command"`
-	// Node is how the command installs Node.js before npm, where none is
-	// here: nvm (Linux), nvm-mac (a Mac, where nvm's installer wants the
-	// Xcode Command Line Tools) or winget (Windows); "" when it doesn't
-	Node string `json:"node,omitempty"`
-	// Admin is npm's global folder, for an npm command run where only an
-	// administrator can change it (Windows' Program Files); "" otherwise
+	// Admin is the package manager's global folder, for an npm command run
+	// where only an administrator can change it (Windows' Program Files);
+	// "" otherwise
 	Admin string `json:"admin,omitempty"`
 }
 
@@ -50,6 +51,18 @@ type Install struct {
 	// Missing: the agent's settings are here but its CLI isn't (CLIMissing),
 	// so it is listed on the Agents page and offered here again too
 	Missing bool `json:"missing,omitempty"`
+}
+
+// InstallSet is what the Agents page gets: the agents not on this machine
+// with their install commands, and the Node.js package manager their
+// commands run with here.
+type InstallSet struct {
+	Agents []Install `json:"agents"`
+	// PackageManager is the Node.js package manager the agents' commands
+	// run with here, the first of packageManagers that is (packageManager):
+	// bun, yarn, pnpm or npm; "" when none is, and the commands are npm's
+	// then, with the page saying to get Node.js first
+	PackageManager string `json:"packageManager"`
 }
 
 // vendorInstall is the installer each vendor's own docs give first, where
@@ -97,10 +110,10 @@ var vendorInstall = map[string]func(goos string) []InstallCmd{
 }
 
 // installCommands is how to install the agent with the given id on goos:
-// the vendor's installer first, then npm's package, the one cliSpecs
-// updates, after Node.js's own install when node is false; nil for one
-// magpie knows no command for.
-func installCommands(id, goos string, node bool) []InstallCmd {
+// the vendor's installer first, then the package, the one cliSpecs updates,
+// installed with pm, the Node.js package manager here; nil for one magpie
+// knows no command for.
+func installCommands(id, goos, pm string) []InstallCmd {
 	var out []InstallCmd
 	if only := cliSpecs[id].only; len(only) > 0 && !slices.Contains(only, goos) {
 		return nil
@@ -109,47 +122,64 @@ func installCommands(id, goos string, node bool) []InstallCmd {
 		out = append(out, f(goos)...)
 	}
 	if spec, ok := cliSpecs[id]; ok && len(spec.npm) > 0 {
-		out = append(out, npmInstall(spec.npm[0], goos, node))
+		if pm == "" {
+			pm = "npm"
+		}
+		out = append(out, InstallCmd{Via: pm, Command: packageManagers[pm] + spec.npm[0]})
 	}
 	return out
 }
 
-// nvmVersion is the nvm release whose installer the commands fetch
-// (github.com/nvm-sh/nvm/releases/latest).
-const nvmVersion = "v0.40.8"
+// packageManagers are how each Node.js package manager installs a package
+// globally, by the name the command runs under.
+var packageManagers = map[string]string{
+	"npm":  "npm install -g ",
+	"pnpm": "pnpm add -g ",
+	"yarn": "yarn global add ",
+	"bun":  "bun add -g ",
+}
 
-// npmInstall is the command installing pkg with npm on goos, with Node.js
-// installed first when node is false.
-//
-// On a Mac or Linux: nvm's installer, then nvm.sh read into the shell the
-// command runs in (the installer adds it to the profile, which only the
-// terminals opened after read), its LTS Node, then npm. NVM_DIR is set
-// and its folder made, as the installer would go by $XDG_CONFIG_HOME/nvm
-// where that is set, and nvm.sh couldn't be found then. nvm's Node is the
-// user's own, so the global install wants no sudo.
-//
-// On Windows, in PowerShell: winget's Node.js LTS, then PATH read again
-// from the registry (the installer adds Node's folder there, not to this
-// terminal), then npm.cmd — npm alone is npm.ps1 there, which PowerShell's
-// default execution policy refuses to run. Each step is parted by ";", as
-// Windows PowerShell 5.1 has no "&&".
-func npmInstall(pkg, goos string, node bool) InstallCmd {
-	plain := "npm install -g " + pkg
-	switch {
-	case node:
-		return InstallCmd{Via: "npm", Command: plain}
-	case goos == "windows":
-		return InstallCmd{Via: "npm", Node: "winget", Command: "winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements; " +
-			"$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); " +
-			"npm.cmd install -g " + pkg}
+// packageManagerOrder is the order magpie looks for a Node.js package
+// manager in: bun, yarn, pnpm, then npm, which Node.js comes with.
+var packageManagerOrder = []string{"bun", "yarn", "pnpm"}
+
+// packageManager is the Node.js package manager the agents' commands run
+// with here: the first of packageManagerOrder this machine has, else npm
+// where nodeHere; "" when none is, and the page says to get Node.js first.
+func packageManager() string {
+	for _, name := range packageManagerOrder {
+		p, ok := toolPath(name)
+		if !ok {
+			continue
+		}
+		// Yarn 2 and later have no global command (yarnClassic)
+		if name == "yarn" && !yarnClassic(p) {
+			continue
+		}
+		return name
 	}
-	how := "nvm"
-	if goos == "darwin" {
-		how = "nvm-mac"
+	if nodeHere() {
+		return "npm"
 	}
-	return InstallCmd{Via: "npm", Node: how, Command: `export NVM_DIR="$HOME/.nvm" && mkdir -p "$NVM_DIR" && ` +
-		"t=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/" + nvmVersion + `/install.sh -o "$t" && ` +
-		`bash "$t" && . "$NVM_DIR/nvm.sh" && nvm install --lts && ` + plain}
+	return ""
+}
+
+var yarnVersions memo
+
+// yarnClassic says whether yarn is Yarn 1, whose "yarn global add"
+// installs a package globally: Yarn 2 and later have no global command, so
+// the package managers after it in packageManagerOrder are looked for.
+func yarnClassic(yarn string) bool {
+	v := yarnVersions.get(yarn, "", time.Hour, 5*time.Minute, func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		out, err := proc.CommandContext(ctx, yarn, "--version").Output()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(out)), nil
+	})
+	return strings.HasPrefix(v, "1.")
 }
 
 // nodeHere says whether this machine has Node.js's npm: on PATH, in one
@@ -157,40 +187,67 @@ func npmInstall(pkg, goos string, node bool) InstallCmd {
 // Homebrew's, …) or, on Windows, in the PATH a terminal opened now has
 // and in Node.js's installer's own folder.
 func nodeHere() bool {
-	if _, err := proc.Look("npm"); err == nil {
-		return true
-	}
-	dirs := proc.UserBinDirs()
+	var dirs []string
 	if runtime.GOOS == "windows" {
-		dirs = append(dirs, proc.SystemDirs(proc.LoginPath()...)...)
 		if pf := os.Getenv("ProgramFiles"); pf != "" {
-			dirs = append(dirs, proc.SystemDirs(filepath.Join(pf, "nodejs"))...)
+			dirs = proc.SystemDirs(filepath.Join(pf, "nodejs"))
 		}
 	}
-	return npmIn(dirs, runtime.GOOS)
+	_, ok := toolPath("npm", dirs...)
+	return ok
 }
 
-// npmIn says whether one of dirs has npm in it: on Windows Node.js's
-// npm.cmd, or mise's shim npm.exe (its default shim mode) or npm.cmd.
-func npmIn(dirs []string, goos string) bool {
-	names := []string{"npm"}
-	if goos == "windows" {
-		names = []string{"npm.cmd", "npm.exe"}
+// toolPath is where this machine has the program name: on PATH, in one of
+// the folders a user's tools go in (nvm's, fnm's, mise's, volta's,
+// Homebrew's, bun's, …) or, on Windows, in the PATH a terminal opened now
+// has; dirs are looked in after those, in order. Windows' names carry
+// .cmd or .exe, as Node.js's npm.cmd and mise's shim npm.exe do.
+func toolPath(name string, dirs ...string) (string, bool) {
+	if p, err := proc.Look(name); err == nil {
+		return p, true
 	}
-	return slices.ContainsFunc(dirs, func(d string) bool {
-		return d != "" && slices.ContainsFunc(names, func(n string) bool { return isFile(filepath.Join(d, n)) })
-	})
+	all := proc.UserBinDirs()
+	if runtime.GOOS == "windows" {
+		all = append(all, proc.SystemDirs(proc.LoginPath()...)...)
+	}
+	return toolAt(append(all, dirs...), toolNames(name, runtime.GOOS))
+}
+
+// toolAt is where one of dirs has a file named one of names, false when
+// none does.
+func toolAt(dirs, names []string) (string, bool) {
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		for _, n := range names {
+			if p := filepath.Join(d, n); isFile(p) {
+				return p, true
+			}
+		}
+	}
+	return "", false
+}
+
+// toolNames are the names a program has on goos: its own, and on Windows
+// .cmd or .exe, as Node.js's npm.cmd and mise's shim npm.exe do.
+func toolNames(name, goos string) []string {
+	if goos == "windows" {
+		return []string{name + ".cmd", name + ".exe"}
+	}
+	return []string{name}
 }
 
 // Installs is every agent magpie knows a command for that isn't on this
-// machine, in the Agents page's order.
-func Installs() []Install {
-	node := nodeHere()
-	out := installsOf(All(), runtime.GOOS, node)
-	if node && adminNPM {
-		npmNeedsAdmin(out, npmGlobalPrefix())
+// machine, in the Agents page's order, with the Node.js package manager
+// their commands run with here.
+func Installs() InstallSet {
+	pm := packageManager()
+	set := InstallSet{Agents: installsOf(All(), runtime.GOOS, pm), PackageManager: pm}
+	if pm == "npm" && adminNPM {
+		npmNeedsAdmin(set.Agents, npmGlobalPrefix())
 	}
-	return out
+	return set
 }
 
 // npmNeedsAdmin marks the npm commands of out with prefix, npm's global
@@ -244,14 +301,14 @@ func npmGlobalPrefix() string {
 	})
 }
 
-func installsOf(all []*Agent, goos string, node bool) []Install {
+func installsOf(all []*Agent, goos, pm string) []Install {
 	out := []Install{}
 	for _, a := range all {
 		missing := a.CLIMissing()
 		if a.WSL != "" || a.Detected() && !missing {
 			continue
 		}
-		cmds := installCommands(a.ID, goos, node)
+		cmds := installCommands(a.ID, goos, pm)
 		if len(cmds) == 0 {
 			continue
 		}
@@ -285,7 +342,7 @@ func (a *Agent) CLIMissing() bool {
 	if a.WSL != "" || a.Plugin != "" || a.Bin == "" || a.detect != nil && a.ID != "goose" {
 		return false
 	}
-	if len(installCommands(a.ID, runtime.GOOS, true)) == 0 && !cliOnly[a.ID] {
+	if len(installCommands(a.ID, runtime.GOOS, "")) == 0 && !cliOnly[a.ID] {
 		return false
 	}
 	if !a.Detected() {

@@ -73,7 +73,7 @@ func TestDshDesktopAppIsNoMissingCLI(t *testing.T) {
 	// a name no machine has: proc.FindTool also looks where users' tools go
 	a.Bin = "magpie-test-gone-dsh"
 	offered := func() bool {
-		for _, x := range installsOf([]*Agent{a}, "darwin", true) {
+		for _, x := range installsOf([]*Agent{a}, "darwin", "") {
 			if x.ID == "dsh" {
 				return true
 			}
